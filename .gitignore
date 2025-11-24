@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+.env
+.venv/
+venv/
+env/
+.DS_Store
+celerybeat-schedule
+celerybeat-schedule-shm
+celerybeat-schedule-wal
+uv.lock

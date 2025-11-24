@@ -1,0 +1,12 @@
+[project]
+name = "celery-worker-benchmark"
+version = "0.1.0"
+description = "Celery worker pool benchmark tool"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "celery>=5.3.0",
+    "redis>=5.0.0",
+    "python-dotenv>=1.0.0",
+    "gevent>=23.0.0",
+]
