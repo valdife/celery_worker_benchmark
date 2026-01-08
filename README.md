@@ -34,7 +34,7 @@ REDIS_URL=redis://localhost:6379/0
 docker-compose up -d
 ```
 
-2. Wait for services to be ready, then run the benchmark:
+2. Wait for services to be ready, then run the benchmark inside docker container:
 ```bash
 python main.py
 ```
