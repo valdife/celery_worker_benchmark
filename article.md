@@ -1,160 +1,36 @@
-_How to diagnose task types and choose the right concurrency model for optimal Celery workflows._
+### How to diagnose task types and choose the right concurrency model for optimal Celery workflows.
 
-### **Why this matters (a quick user story)**
-Imagine a Django app where Celery handles two very different workloads:
+**Why this matters**
 
-- **I/O-bound**: call third-party APIs, fetch data, write to S3/Postgres, send emails
-- **CPU-bound**: generate PDFs, resize/encode media, run scoring/ETL computations
+In a Django app, Celery might handle both I/O-bound work (APIs, S3, Postgres, email) and CPU-bound work (PDFs, media encoding, ETL). If both share the same worker pool, the wrong choice can tank throughput: CPU-heavy tasks block I/O-heavy ones or the other way around, causing queue buildup and long tail latencies. The goal is to quickly tell what type of work you have and pick a pool that matches.
 
-If both workloads share the same worker pool settings, the “wrong” pool can tank throughput: CPU-heavy tasks can block progress for I/O-heavy tasks (or vice versa), causing queue buildup and long tail latencies. The goal is to quickly diagnose what type of work you have and pick a pool/concurrency model that matches it.
+**I/O-bound vs CPU-bound**
 
----
+Tasks are either I/O-bound or CPU-bound. I/O-bound tasks spend most of their time waiting on external resources (APIs, DB, disk); examples are HTTP calls, DB writes, image downloads. The bottleneck is network or disk, not CPU. CPU-bound tasks do heavy computation (video encoding, math); the bottleneck is processor speed and core count.
 
-### **The Two Faces of Task Execution: I/O-bound vs. CPU-bound**
-Tasks fall into two categories based on what limits their speed:
+**Diagnosing your tasks**
 
-1. **I/O-bound Tasks**
-    - Spend most time waiting for _external resources_ (APIs, databases, file systems).
-    - Examples: HTTP requests, database writes, image downloads.
-    - Bottleneck: Network/disk latency, not raw compute power.
+If task runtime drops when the external resource gets faster (e.g. a faster API), it’s I/O-bound. If runtime stays similar but CPU usage spikes, it’s CPU-bound. I/O-bound code often uses blocking calls like `requests.get()` or DB drivers; CPU-bound code runs loops or heavy algorithms. Tools like Flower or `celery inspect` help: I/O tasks show long idle periods, CPU tasks keep workers busy.
 
-2. **CPU-bound Tasks**
-    - Crunch numbers, process data, or run complex algorithms.
-    - Examples: video encoding, math calculations.
-    - Bottleneck: Processor speed/core count.
+**Worker pools**
 
----
+Prefork (multi-process, default) fits CPU-bound work and avoids the GIL but uses more memory. Gevent and Eventlet use cooperative greenlets and fit I/O-bound work; they don’t help pure CPU work. Threads can work for blocking I/O and some C-extension workloads; pure Python CPU work still hits the GIL. Solo is single-threaded and for debugging only.
 
-### **Diagnosing Your Tasks: Is It I/O or CPU?**
-**Step 1: Profile Execution Time**
+For CPU-bound on prefork, start with concurrency around the number of CPU cores and tune from there. For I/O-bound on gevent/eventlet, you can often use much higher concurrency (tens or hundreds), since greenlets are cheap and most time is waiting. Note: gevent/eventlet optimize blocking I/O (e.g. `requests`, sync DB drivers). If your code is already async (asyncio, `aiohttp`), stick to prefork (or threads)—gevent does not run asyncio coroutines, so it won’t help. Use gevent/eventlet for blocking I/O tasks only.
 
-- If task runtime drops significantly when the external resource speeds up (e.g., a faster API), it’s I/O-bound.
-- If runtime stays the same but CPU usage spikes, it’s CPU-bound.
-**Step 2: Check for “Wait” Patterns**
+**Benchmark setup**
 
-```
-# I/O-Bound Example
-@app.task
-def fetch_user_data():
-    response = requests.get("https://api.example.com/data")  # Blocking I/O
-    return response.json()
+Example tasks: an I/O-bound task that calls `requests.get("https://httpbin.org/delay/1")`, and a CPU-bound task that runs a tight loop (e.g. `sum(range(10**7))`). Workers: `celery -A celery_app worker --pool=prefork --concurrency=4` for prefork; `celery -A celery_app worker --pool=gevent --concurrency=10` for gevent. `-A` points to the Celery app module, `--pool` selects processes/greenlets/threads, `--concurrency` sets pool size.
 
-# CPU-Bound Example
-@app.task
-def find_next_pi_digit():
-    next_pi_digit = calculate_next_pi_digit()  # CPU-intensive
-    return next_pi_digit
-```
-**Step 3: Use Monitoring Tools**
-Tools like Flower ([﻿https://flower.readthedocs.io/](https://flower.readthedocs.io/)) or `celery inspect` show worker activity. I/O tasks often have long idle periods; CPU tasks keep workers busy.
+**Takeaways**
 
----
+Match the pool to the task: gevent for I/O-heavy (APIs, DB), prefork for CPU-heavy (data processing, math). Monitor with `top`/`htop` and Flower. Avoid over-threading; high gevent concurrency can starve CPU-bound work.
 
-### **Worker Pool Showdown: Prefork vs. Greenlets vs. Threads vs. Solo**
+**Links**
 
-| **Pool Type** | **Concurrency Model** | **Best For** | **Worst For** |
-| ----- | ----- | ----- | ----- |
-| Prefork | Multi-process (default) | CPU-bound tasks | I/O-bound tasks |
-| Gevent | Greenlets (cooperative “async”) | I/O-bound tasks | CPU-bound tasks |
-| Eventlet | Green threads (cooperative “async”) | I/O-bound tasks | CPU-bound tasks |
-| Threads | OS threads | I/O-bound tasks (and GIL-releasing code) | Pure Python CPU-bound tasks |
-| Solo | Single-threaded | Debugging | Production |
-**Why it matters:**
-
-- **Prefork**: Uses multiple processes. Great for CPU work (avoids Python’s GIL), but high memory overhead.
-- **Gevent/Eventlet**: Cooperative concurrency. Great when tasks spend time waiting on I/O; pure CPU work will not benefit.
-- **Threads**: Often fine for blocking I/O (and some C-extension heavy workloads), but pure Python CPU work still fights the GIL.
-
-**Concurrency tuning rule of thumb:**
-
-- For **CPU-bound** workloads on `prefork`, start around **the number of CPU cores** (or slightly below/above) and measure. Going far beyond core count typically just adds context switching and memory pressure.
-- For **I/O-bound** workloads on `gevent`/`eventlet`, you can often set **much higher** concurrency (tens/hundreds+), because greenlets are lightweight and most time is spent waiting on network/disk.
-
-**Important: “asyncio tasks” vs `gevent`**
-
-- `gevent`/`eventlet` pools optimize **blocking I/O** (e.g. `requests`, database drivers) by cooperatively switching greenlets while they wait.
-- If your task code is already written using **`asyncio`** (e.g. `aiohttp`, `asyncio.gather()`), a `gevent` pool **does not automatically make it faster**, because `gevent` schedules greenlets, not asyncio coroutines. In practice, you usually benchmark `asyncio`-based tasks under `prefork` or `threads`, and benchmark blocking-I/O tasks (I/O bound code written using sync approach) under `gevent`/`eventlet`.
----
-
-### **Benchmark: Pool Performance for Different Task Types**
-**Tasks**
-
-```
-# tasks.py
-import time
-import requests
-from celery import Celery
-
-app = Celery('tasks', broker='redis')
-
-# Simulate I/O-bound work
-@app.task
-def io_task():
-    # Blocking I/O: waiting on a remote HTTP endpoint
-    requests.get("https://httpbin.org/delay/1", timeout=2)
-
-# Simulate CPU-bound work
-@app.task
-def cpu_task():
-    count = 0
-    for i in range(10**7):
-        count += i
-    return count
-```
-**Workers**
-
-What the Celery CLI options mean (high level):
-
-- **`celery -A <app> worker`**: starts a worker process and tells it where to import the Celery application from.
-  - `-A` can point to a module (e.g. `celery_app`) or to an explicit object in that module (e.g. `celery_app:celery_app`).
-- **`--pool=<type>`**: chooses the worker pool implementation (processes vs greenlets vs threads).
-  - `prefork` → multi-process (best default for CPU-bound Python)
-  - `gevent` / `eventlet` → cooperative concurrency (best for I/O-bound work)
-  - `threads` → OS threads (often good for I/O; not for pure Python CPU)
-  - `solo` → single-threaded (debugging)
-- **`--concurrency=<n>`**: sets the pool size (process count / greenlets / threads depending on pool).
-- **`--loglevel=info|debug|warning`**: controls worker logging verbosity.
-
-```
-# Prefork (4 processes)
-celery -A celery_app worker --pool=prefork --concurrency=4
-
-# Gevent (10 green threads)
-celery -A celery_app worker --pool=gevent --concurrency=10
-```
-**Benchmark Results**
-
-// todo: benchmark plot
-
----
-
-### **Execution Time Chart**
-_(Hypothetical visualization: Bar chart showing Gevent’s 1s I/O time vs. Prefork’s 8.2s CPU time. Include a note to add a chart here in Google Docs.)_
-
----
-
-### **Key Takeaways**
-1. **Match the Pool to the Task**
-    - Use `gevent`  for I/O-heavy workloads (APIs, DB calls).
-    - Use `prefork`  for CPU-intensive tasks (data processing, math).
-
-2. **Monitor Resources**
-    - Use `top`  or `htop`  to check CPU usage.
-    - Use Flower to track task states and worker activity.
-
-3. **Avoid Over-Threading**
-    - High concurrency with Gevent can starve CPU-bound tasks.
-
-
-
-
-
----
-
-### **Links**
-- **Benchmark repository**: `https://github.com/valdife/celery_worker_benchmark`
-- **Celery docs (worker concurrency / pools)**: `https://docs.celeryq.dev/`
-- **Flower (Celery monitoring UI)**: `https://flower.readthedocs.io/`
-- **Gevent**: `https://www.gevent.org/`
-- **Eventlet**: `https://eventlet.net/`
-- **Python GIL (background)**: `https://docs.python.org/3/glossary.html#term-global-interpreter-lock`
+Benchmark repo: https://github.com/valdife/celery_worker_benchmark
+Celery docs: https://docs.celeryq.dev/
+Flower: https://flower.readthedocs.io/
+Gevent: https://www.gevent.org/
+Eventlet: https://eventlet.net/
+Python GIL: https://docs.python.org/3/glossary.html#term-global-interpreter-lock
