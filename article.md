@@ -22,6 +22,16 @@ For CPU-bound on prefork, start with concurrency around the number of CPU cores 
 
 Example tasks: an I/O-bound task that calls `requests.get("https://httpbin.org/delay/1")`, and a CPU-bound task that runs a tight loop (e.g. `sum(range(10**7))`). Workers: `celery -A celery_app worker --pool=prefork --concurrency=4` for prefork; `celery -A celery_app worker --pool=gevent --concurrency=10` for gevent. `-A` points to the Celery app module, `--pool` selects processes/greenlets/threads, `--concurrency` sets pool size.
 
+**Benchmark results**
+
+CPU-bound: prefork (sync or async, concurrency = 4) finishes in ~45–46s; gevent (concurrency doesn't matter) takes ~175s because greenlets don’t use multiple cores. Use prefork for CPU-heavy work.
+
+![Celery benchmark - CPU bound](https://i.imgur.com/VSEVvEj.png)
+
+I/O-bound: sync prefork with concurrency = 4 is slow (~2623s); sync gevent with concurrency=4 is better (~954s), and sync gevent with concurrency = 100 is fastest (~39.5s). Async prefork with concurrency = 4 is competitive (~51.6s)—if your code is already async, prefork can handle I/O-bound work well without switching to gevent.
+
+![Celery benchmark - I/O bound](https://i.imgur.com/Dr5NfPh.png)
+
 **Takeaways**
 
 Match the pool to the task: gevent for I/O-heavy (APIs, DB), prefork for CPU-heavy (data processing, math). Monitor with `top`/`htop` and Flower. Avoid over-threading; high gevent concurrency can starve CPU-bound work.
