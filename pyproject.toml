@@ -11,4 +11,6 @@ dependencies = [
     "gevent>=23.0.0",
     "requests>=2.32.5",
     "aiohttp>=3.13.2",
+    "matplotlib>=3.8.0",
+    "pandas>=2.0.0",
 ]

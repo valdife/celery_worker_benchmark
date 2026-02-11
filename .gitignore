@@ -14,3 +14,4 @@ celerybeat-schedule-shm
 celerybeat-schedule-wal
 uv.lock
 results/*
+.matplotlib/
