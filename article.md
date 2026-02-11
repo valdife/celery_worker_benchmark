@@ -1,4 +1,4 @@
-_How to diagnose task types and choose the right concurrency model for blazing-fast Celery workflows._
+_How to diagnose task types and choose the right concurrency model for optimal Celery workflows._
 
 ### **Why this matters (a quick user story)**
 Imagine a Django app where Celery handles two very different workloads:
