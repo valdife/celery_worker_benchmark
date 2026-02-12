@@ -102,7 +102,7 @@ Sync prefork concurrency = 4 is slow (~2623s). Sync gevent concurrency = 4 is be
 
 ## 04 — Takeaways and what to do next
 
-Match the pool to the task: **gevent** for I/O-heavy (APIs, DB, blocking HTTP), **prefork** for CPU-heavy (data processing, encoding, math). Use **Flower** or `celery inspect` and `top`/`htop` to confirm workers are busy when you expect and idle when they’re waiting on I/O. Avoid over-threading; high gevent concurrency can starve CPU-bound work if mixed in the same deployment.
+Match the pool to the task: **gevent** for sync I/O-heavy code (APIs, DB, blocking HTTP), **prefork** for CPU-heavy (data processing, encoding, math) or async code. Use **Flower** or `celery inspect` and `top`/`htop` to confirm workers are busy when you expect and idle when they’re waiting on I/O. Avoid over-threading; high gevent concurrency can starve CPU-bound work if mixed in the same deployment.
 
 When in doubt, run a small benchmark with your real task shape—same style as above—and measure. A few minutes of setup can save hours of production debugging.
 
