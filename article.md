@@ -4,7 +4,7 @@
 
 In Django apps, Celery handles both I/O-bound work (APIs, S3, Postgres, email) and CPU-bound work (PDFs, encoding, ETL). Put both on the same worker pool with the wrong concurrency model, and throughput suffers: CPU-heavy tasks block I/O-heavy ones or the other way around, leading to queue buildup and long tail latencies. Real workflows are often **mixed**—fetch data (I/O), process it (CPU), then write elsewhere (I/O)—so picking a pool can get tricky.
 
-We focus here on the **extremes**: purely I/O-bound and purely CPU-bound tasks. That lets us compare worker pools (prefork, gevent) and concurrency settings without the extra complexity; understanding how each pool behaves at the extremes makes it easier to reason about mixed workloads. You’ll see how to tell what type of work you have, pick a matching pool, and we back it up with benchmarks.
+We focus here on the **extremes**: purely I/O-bound and purely CPU-bound tasks. That lets us compare worker pools (prefork, gevent) and concurrency settings without the extra complexity; understanding how each pool behaves at the extremes makes it easier to reason about mixed workloads. You’ll see how to tell what type of work you have, pick a matching pool—with benchmarks to back it up.
 
 ---
 
@@ -21,7 +21,7 @@ If you run both kinds on the same pool with the same concurrency model, you eith
 - **I/O-bound:** Task runtime drops when the external resource gets faster (e.g. a faster API or DB). Code often uses blocking calls like `requests.get()` or sync DB drivers; workers show long idle periods in Flower or `celery inspect`.
 - **CPU-bound:** Runtime stays similar when the resource improves; CPU usage spikes. Code runs tight loops or heavy algorithms; workers stay busy.
 
-Quick check: if removing or mocking the external call makes the task almost instant, it’s I/O-bound. If it stays slow, it’s CPU-bound.
+Quick check: if removing or mocking the external call makes the task almost instant, it’s I/O-bound. If it stays slow, it’s CPU-bound. When we review Celery setups at [Kruko](https://kruko.io/), figuring out I/O vs CPU is usually the first step.
 
 ---
 
@@ -29,7 +29,7 @@ Quick check: if removing or mocking the external call makes the task almost inst
 
 ### Matching the pool to the task
 
-| Pool       | Model           | Best for      | GIL / cores |
+| Pool       | Model           | Best for      | Notes |
 |-----------|------------------|---------------|-------------|
 | **prefork** | Multi-process   | CPU-bound     | Avoids GIL, one process per core |
 | **gevent** / **eventlet** | Greenlets (cooperative) | I/O-bound | Single process; concurrency can be high |
@@ -95,7 +95,7 @@ celery -A celery_app worker --pool=gevent --concurrency=10
 Prefork (sync or async, `concurrency = 4`) finishes in ~45–46s.
 Gevent (any concurrency) takes ~175s because greenlets run in a single process and don’t use multiple cores—so CPU-bound work doesn’t scale with gevent.
 
-**Conclusion:** Use **prefork** for CPU-heavy or when your code is async already.
+**Conclusion:** Use **prefork** for CPU-heavy tasks.
 
 
 
@@ -120,12 +120,13 @@ Async prefork concurrency = 4 is competitive (~51.6s)—if your code is already 
 
 Match the pool to the task: **gevent** for sync I/O-heavy code (APIs, DB, blocking HTTP), **prefork** for CPU-heavy (data processing, encoding, math) or async code. Use **Flower** or `celery inspect` and `top`/`htop` to confirm workers are busy when you expect and idle when they’re waiting on I/O. Avoid over-threading; high gevent concurrency can starve CPU-bound work if mixed in the same deployment.
 
-When in doubt, run a small benchmark with your real task shape—same style as above—and measure. A few minutes of setup can save hours of production debugging.
+When in doubt, run a small benchmark with your real task shape—same style as above—and measure. A few minutes of setup can save hours of production debugging. If you’re scaling Celery or wrestling with mixed workloads in production, [Kruko](https://kruko.io/) helps teams architect and tune Django backends—[drop us a line](https://kruko.io/contact) for a quick chat.
 
 ---
 
 ## Links
 
+- **[Kruko](https://kruko.io/)** — AI-driven tech consulting; we help design and scale Django, Celery, and cloud backends.
 - **Benchmark repo:** https://github.com/valdife/celery_worker_benchmark
 - **Celery docs:** https://docs.celeryq.dev/
 - **Flower:** https://flower.readthedocs.io/
