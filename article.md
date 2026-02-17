@@ -93,7 +93,9 @@ celery -A celery_app worker --pool=gevent --concurrency=10
 Prefork (sync or async, `concurrency = 4`) finishes in ~45–46s.
 Gevent (any concurrency) takes ~175s because greenlets run in a single process and don’t use multiple cores—so CPU-bound work doesn’t scale with gevent.
 
-**Conclusion:** Use **prefork** for CPU-heavy work.
+**Conclusion:** Use **prefork** for CPU-heavy or when your code is async already.
+
+
 
 ![Celery benchmark - CPU bound](https://i.imgur.com/VSEVvEj.png)
 
