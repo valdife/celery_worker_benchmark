@@ -2,7 +2,9 @@
 
 ## Overview
 
-In Django apps, Celery often handles both I/O-bound work (APIs, S3, Postgres, email) and CPU-bound work (PDFs, encoding, ETL). When both share the same worker pool, the wrong choice tanks throughput: CPU-heavy tasks block I/O-heavy ones or vice versa, causing queue buildup and long tail latencies. This article shows how to quickly tell what type of work you have and pick a pool that matches it—with benchmarks to back it up.
+In Django apps, Celery handles both I/O-bound work (APIs, S3, Postgres, email) and CPU-bound work (PDFs, encoding, ETL). Put both on the same worker pool with the wrong concurrency model, and throughput suffers: CPU-heavy tasks block I/O-heavy ones or the other way around, leading to queue buildup and long tail latencies. Real workflows are often **mixed**—fetch data (I/O), process it (CPU), then write elsewhere (I/O)—so picking a pool can get tricky.
+
+We focus here on the **extremes**: purely I/O-bound and purely CPU-bound tasks. That lets us compare worker pools (prefork, gevent) and concurrency settings without the extra complexity; understanding how each pool behaves at the extremes makes it easier to reason about mixed workloads. You’ll see how to tell what type of work you have, pick a matching pool, and we back it up with benchmarks.
 
 ---
 
