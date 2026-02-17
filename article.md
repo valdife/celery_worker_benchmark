@@ -41,10 +41,20 @@ Quick check: if removing or mocking the external call makes the task almost inst
 ### Example: defining task types in code
 
 ```python
-# I/O-bound: most time waiting on network
+# I/O-bound (sync): blocking network call
 @celery_app.task
 def fetch_external_data(url: str) -> dict:
     return requests.get(url, timeout=10).json()
+
+# I/O-bound (async): non-blocking with aiohttp; use prefork or threads, not gevent
+@celery_app.task
+def fetch_external_data_async(urls: list[str]) -> list[dict]:
+    async def _fetch():
+        async with aiohttp.ClientSession() as session:
+            tasks = [session.get(u, timeout=aiohttp.ClientTimeout(total=10)) for u in urls]
+            responses = await asyncio.gather(*tasks, return_exceptions=True)
+            return [await r.json() if not isinstance(r, Exception) else {} for r in responses]
+    return asyncio.run(_fetch())
 
 # CPU-bound: tight loop, no external wait
 @celery_app.task
