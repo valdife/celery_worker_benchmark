@@ -90,7 +90,8 @@ celery -A celery_app worker --pool=gevent --concurrency=10
 
 ### CPU-bound results
 
-Prefork (sync or async, `concurrency = 4`) finishes in ~45–46s. Gevent (any concurrency) takes ~175s because greenlets run in a single process and don’t use multiple cores—so CPU-bound work doesn’t scale with gevent.
+Prefork (sync or async, `concurrency = 4`) finishes in ~45–46s.
+Gevent (any concurrency) takes ~175s because greenlets run in a single process and don’t use multiple cores—so CPU-bound work doesn’t scale with gevent.
 
 **Conclusion:** Use **prefork** for CPU-heavy work.
 
@@ -100,7 +101,8 @@ Prefork (sync or async, `concurrency = 4`) finishes in ~45–46s. Gevent (any co
 
 ### I/O-bound results
 
-Sync prefork concurrency = 4 is slow (~2623s). Sync gevent concurrency = 4 is better (~954s); sync gevent concurrency = 100 is fastest (~39.5s). Async prefork concurrency = 4 is competitive (~51.6s)—if your code is already async, prefork can handle I/O-bound work well without switching to gevent.
+Sync prefork concurrency = 4 is slow (~2623s). Sync gevent concurrency = 4 is better (~954s); sync gevent concurrency = 100 is fastest (~39.5s).
+Async prefork concurrency = 4 is competitive (~51.6s)—if your code is already async, prefork can handle I/O-bound work well without switching to gevent.
 
 **Conclusion:** Use **gevent** (or eventlet) with higher concurrency for blocking I/O; if you’re already async, prefork with a few workers can be enough.
 
